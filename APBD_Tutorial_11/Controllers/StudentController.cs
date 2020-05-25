@@ -1,9 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
 using APBD_Tutorial_11.Models;
-using Microsoft.AspNetCore.Http;
+using APBD_Tutorial_11.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace APBD_Tutorial_11.Controllers
@@ -12,126 +11,72 @@ namespace APBD_Tutorial_11.Controllers
     [ApiController]
     public class StudentController : ControllerBase
     {
-        private readonly s18458Context _context;
+        private readonly IStudentDbService _studentDbService;
 
-        public StudentController(s18458Context context)
+        public StudentController(IStudentDbService service)
         {
-            _context = context;
+            _studentDbService = service;
         }
 
         [HttpGet]
         public IActionResult GetAllStudents()
         {
-            List<Models.Student> students = _context.Student.ToList();
-            return Ok(students);
+            var students = _studentDbService.GetAllStudents();
+            return !students.Any() ? StatusCode(404,"No Students Found") : StatusCode(200, students);
         }
 
         [HttpPut("add")]
         public IActionResult InsertNewStudent(Models.InsertStudentRequest studentRequest)
         {
 
-            List<Error> errorList = ValidationHelper.ValidateStudent(studentRequest, _context);
+            List<Error> errorList = ValidationHelper.ValidateStudent(studentRequest);
 
             if (!errorList.Count.Equals(0))
             {
                 return StatusCode(400, errorList);
             }
 
-            try
+            bool exists = _studentDbService.StudentExists(studentRequest.IndexNumber);
+            if (exists)
             {
-                var insertedStudent = new Student()
-                {
-                    IndexNumber = studentRequest.IndexNumber,
-                    FirstName = studentRequest.FirstName,
-                    LastName = studentRequest.LastName,
-                    BirthDate = DateTime.ParseExact(studentRequest.BirthDate, "dd.MM.yyyy", null),
-                    Password = studentRequest.Password,
-                    IdEnrollment = Convert.ToInt32(studentRequest.IdEnrollment)
-                };
-                
-                _context.Student.Add(insertedStudent);
-                _context.SaveChanges();
-                return StatusCode(201, "Successfully Inserted");
-            } catch (Exception ex)
-            {
-                return BadRequest(ex.Message);
+                return StatusCode(400, "Student with index " + studentRequest.IndexNumber + " already exists");
             }
+
+            var response = _studentDbService.InsertStudent(studentRequest);
+            return (StatusCode(201, response));
         }
 
         [HttpDelete]
         [Route("{index}/delete")]
-        public IActionResult DeleteStudent(string index )
+        public IActionResult DeleteStudent(string index)
         {
-            var student = _context.Student.FirstOrDefault(student => student.IndexNumber == index);
-            if (student == null)
+            bool exists = _studentDbService.StudentExists(index);
+            if (exists)
             {
-                return StatusCode(404,"Student with index " + index + " doesnt exist");
-            }
-
-            try
-            {
-                _context.Student.Remove(student);
-                _context.SaveChanges();
-                
+                _studentDbService.DeleteStudent(index);
                 return StatusCode(204);
             }
-            catch (Exception exception)
-            {
-                return StatusCode(400, exception.Message);
-            }
+            return StatusCode(404, "No student with index " + index);
         }
 
         [HttpPut("update")]
         public IActionResult UpdateStudent(UpdateStudentRequest updateRequest)
         {
             
-            List<Error> errorList = ValidationHelper.ValidateUpdateStudentRequest(updateRequest, _context);
+            List<Error> errorList = ValidationHelper.ValidateUpdateStudentRequest(updateRequest);
             
             if (!errorList.Count.Equals(0))
             {
                 return StatusCode(400, errorList);
             }
 
-            var student = _context.Student.FirstOrDefault(student => student.IndexNumber == updateRequest.IndexNumber);
-            if (student == null)
-            {
-                return StatusCode(404,"Student with index " + updateRequest.IndexNumber + " doesnt exist");
-            }
+            var studentExists = _studentDbService.StudentExists(updateRequest.IndexNumber);
+            if (!studentExists) return StatusCode(404, "No student with index " + updateRequest.IndexNumber);
 
-            try
-            {
-                if (!string.IsNullOrEmpty(updateRequest.FirstName))
-                {
-                    student.FirstName = updateRequest.FirstName;
-                }
 
-                if (!string.IsNullOrEmpty(updateRequest.LastName))
-                {
-                    student.LastName = updateRequest.LastName;
-                }
+            var response = _studentDbService.UpdateStudent(updateRequest);
+            return (StatusCode(201, response));
 
-                if (!string.IsNullOrEmpty(updateRequest.Password))
-                {
-                    student.Password = updateRequest.Password;
-                }
-
-                if (!string.IsNullOrEmpty(updateRequest.BirthDate))
-                {
-                    student.BirthDate = DateTime.ParseExact(updateRequest.BirthDate, "dd.MM.yyyy", null);
-                }
-
-                if (!string.IsNullOrEmpty(updateRequest.IdEnrollment))
-                {
-                    student.IdEnrollment = Convert.ToInt32(updateRequest.IdEnrollment);
-                }
-
-                _context.SaveChanges();
-                return StatusCode(204);
-            }
-            catch (Exception exception)
-            {
-                return StatusCode(400, exception.Message);
-            }
         }
     }
 }

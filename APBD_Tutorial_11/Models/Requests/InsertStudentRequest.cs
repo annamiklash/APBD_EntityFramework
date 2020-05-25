@@ -1,18 +1,15 @@
 ﻿using System;
+using System.ComponentModel.DataAnnotations;
 
 namespace APBD_Tutorial_11.Models
 {
     public class InsertStudentRequest
     {
-        public string IndexNumber { get; set; }
-        public string FirstName { get; set; }
-        public string LastName { get; set; }
-        public string Password { get; set; }
-        public string BirthDate { get; set; }
-        public string IdEnrollment { get; set; }
-
-        public InsertStudentRequest()
-        {
-        }
+        [Required] public string IndexNumber { get; set; }
+        [Required] public string FirstName { get; set; }
+        [Required] public string LastName { get; set; }
+        [Required] public string Password { get; set; }
+        [Required] public string BirthDate { get; set; }
+        [Required] public string IdEnrollment { get; set; }
     }
 }

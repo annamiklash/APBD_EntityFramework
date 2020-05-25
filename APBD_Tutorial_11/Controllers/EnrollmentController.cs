@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using APBD_Tutorial_11.Models;
 using APBD_Tutorial_11.Models.Response;
+using APBD_Tutorial_11.Services;
 using Microsoft.AspNetCore.Mvc;
 // ReSharper disable All
 
@@ -12,129 +13,81 @@ namespace APBD_Tutorial_11.Controllers
     [ApiController]
     public class EnrollmentController : ControllerBase
     {
-        private readonly Models.s18458Context _context;
+        private readonly IStudentDbService _studentDbService;
+        private readonly IEnrollmentDbService _enrollmentDbService;
 
-        public EnrollmentController(Models.s18458Context context)
+        public EnrollmentController(IStudentDbService studentDbService, IEnrollmentDbService enrollmentDbService)
         {
-            _context = context;
+            _studentDbService = studentDbService;
+            _enrollmentDbService = enrollmentDbService;
         }
+
 
         [HttpPost]
         public IActionResult EnrollNewStudent(EnrollmentRequest enrollmentRequest)
         {
-
-            List<Error> errorsList = ValidationHelper.ValidateEnrollmentRequest(enrollmentRequest, _context);
+            List<Error> errorsList = ValidationHelper.ValidateEnrollmentRequest(enrollmentRequest);
             if (!errorsList.Count.Equals(0))
             {
                 return StatusCode(400, errorsList);
             }
 
-            try
+            var studentExists = _studentDbService.StudentExists(enrollmentRequest.IndexNumber);
+            if (studentExists)
             {
-                var studyId = _context.Studies
-                    .FirstOrDefault(studies => studies.Name == enrollmentRequest.Studies)
-                    .IdStudy;
-
-                var idEnrollment = _context.Enrollment
-                    .FirstOrDefault(enrollment => enrollment.Semester == 1 && enrollment.IdStudy == studyId)
-                    .IdEnrollment;
-
-                Student student = new Student()
-                {
-                    IndexNumber = enrollmentRequest.IndexNumber,
-                    FirstName = enrollmentRequest.FirstName,
-                    LastName = enrollmentRequest.LastName,
-                    BirthDate = DateTime.ParseExact(enrollmentRequest.BirthDate, "dd.MM.yyyy", null),
-                    Password = enrollmentRequest.Password,
-                    IdEnrollment = idEnrollment
-                };
-
-                _context.Student.Add(student);
-                _context.SaveChanges();
-
-                EnrollmentResponse response = new EnrollmentResponse()
-                {
-                    LastName = enrollmentRequest.LastName,
-                    Semester = 1
-                };
-
-                return StatusCode(201, response);
-
+                return BadRequest("Student with index " + enrollmentRequest.IndexNumber + " already exists");
             }
-            catch (Exception e)
+
+            var studyExists = _enrollmentDbService.StudyExists(enrollmentRequest.Studies);
+            if (!studyExists)
             {
-                return StatusCode(500, e.Message);
+                return NotFound("Studies " + enrollmentRequest.Studies + " does not exist");
             }
+
+            var enrollmentExists = _enrollmentDbService.EnrollmentExists(1, enrollmentRequest.Studies);
+            if (!enrollmentExists)
+            {
+                return NotFound("Enrollment for semester 1 for " + enrollmentRequest.Studies + " does not exist");
+            }
+            
+            var response = _enrollmentDbService.EnrollStudent(enrollmentRequest);
+            return StatusCode(201, response);
         }
 
         [HttpPost("promotion")]
         public IActionResult PromoteStudent(PromotionRequest promotionRequest)
         {
-            try
+            var errors = ValidationHelper.ValidatePromotionRequest(promotionRequest);
+            if (!errors.Count.Equals(0))
             {
-                var studyId = _context
-                    .Studies
-                    .FirstOrDefault(study => study.Name.Equals(promotionRequest.Studies))
-                    .IdStudy;
-
-                var currentEnrollmentId = _context.Enrollment
-                    .FirstOrDefault(enrollment => enrollment.Semester == promotionRequest.Semester && enrollment.IdStudy == studyId)
-                    .IdEnrollment;
-
-                if (currentEnrollmentId == null)
-                {
-                    return NotFound("Enrollment for semester " + promotionRequest.Semester + " and studies " +
-                                    promotionRequest.Studies + " does not exist");
-                }
-
-                var futureEnrollmentIdExists = _context.Enrollment
-                    .Any(enrollment =>
-                        enrollment.Semester == (promotionRequest.Semester + 1) && enrollment.IdStudy == studyId);
-
-                var futureEnrollmentId = 0;
-                if (!futureEnrollmentIdExists)
-                {
-                    var futureEnrollment = new Enrollment()
-                    {
-                        IdEnrollment = (_context.Enrollment.Max(enrollment => enrollment.IdEnrollment)) + 1,
-                        IdStudy = studyId,
-                        Semester = promotionRequest.Semester + 1,
-
-                    };
-                    _context.Enrollment.Add(futureEnrollment);
-                    _context.SaveChanges();
-                }
-                 futureEnrollmentId = _context.Enrollment
-                    .FirstOrDefault(enrollment => enrollment.Semester == (promotionRequest.Semester + 1) && enrollment.IdStudy == studyId).IdEnrollment;
-                
-
-                List<Student> studentsForPromotion = _context.Student
-                    .Where(student => student.IdEnrollment == currentEnrollmentId)
-                    .ToList();
-                
-             
-                foreach (var student in studentsForPromotion)
-                {
-                    student.IdEnrollment = futureEnrollmentId;
-                    _context.SaveChanges();
-                  
-                }
-                
-                List<string> promotedStudentsIndexList = new List<string>();
-                foreach (var student in studentsForPromotion)
-                {
-                    promotedStudentsIndexList.Add(student.IndexNumber);
-                }
-
-                return StatusCode(201, promotedStudentsIndexList);
+                return StatusCode(400, errors);
             }
-            catch (Exception exception)
+            
+            bool studyExists = _enrollmentDbService.StudyExists(promotionRequest.Studies);
+            if (!studyExists)
             {
-                return StatusCode(400, "Request values are incorrect. " + exception.Message);
+                return NotFound("Studies " + promotionRequest.Studies + " does not exist");
             }
+
+            var enrollmentExists = _enrollmentDbService.EnrollmentExists(promotionRequest.Semester, promotionRequest.Studies);
+            if (!enrollmentExists)
+            {
+                return NotFound("Enrollment for semester " + promotionRequest.Semester + " for " + promotionRequest.Studies + " does not exist");
+            }
+
+            var studentForPromotion =_enrollmentDbService.GetStudentOnEnrollment(promotionRequest.Semester, promotionRequest.Studies);
+            if (!studentForPromotion.Any())
+            {
+                return StatusCode(404, "No students on semester " + promotionRequest.Semester + " and with studies " + promotionRequest.Studies);
+            }
+            
+            var responses = _enrollmentDbService.PromoteStudents(promotionRequest, studentForPromotion);
+            return StatusCode(201, responses);
+            }
+           
         }
     }
-}
+
 
         
     

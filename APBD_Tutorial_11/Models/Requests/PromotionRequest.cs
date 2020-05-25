@@ -5,8 +5,5 @@
         public string Studies { get; set; }
         public int Semester { get; set; }
 
-        public PromotionRequest()
-        {
-        }
     }
 }
